@@ -14,19 +14,24 @@ fi
 
 LAST_TIMESTAMP=$(cat "$PERSISTENCE_FILE")
 
-# --- Construct Modrinth API Query for Minecraft 1.7.10 ---
-QUERY=$(jq -nc \
-  --argjson facets '[["versions:1.7.10"], ["project_type:mod"]]' \
-  --arg index "newest" \
-  --arg limit "$LIMIT" \
-  '{facets: $facets, index: $index, limit: ($limit | tonumber)}')
+# --- User-defined Minecraft versions ---
+# Example in .env: MC_VERSION="1.7.10,1.8,1.12.2"
+MC_VERSION_JSON=$(echo "$MC_VERSIONS" | tr -d ' ' | awk -F, '{for(i=1;i<=NF;i++){printf "\"%s\"%s",$i,(i<NF?",":"")}}')
+MC_VERSION_JSON="[$MC_VERSION_JSON]"
+echo $MC_VERSION_JSON
+
+# --- Construct Modrinth API facets dynamically ---
+FACETS=$(jq -n --argjson versions "$MC_VERSION_JSON" '[[$versions[] | "versions:\(.)"], ["project_type:mod"]]' | jq -c .)
+echo $FACETS
 
 RESPONSE=$(curl -s -G \
         -H "User-Agent: Modrinth new mod watcher/69.0" \
-        --data-urlencode "facets=$(echo "$QUERY" | jq -r '.facets | @json')" \
-                 --data-urlencode "index=newest" \
-                 --data-urlencode "limit=$LIMIT" \
-                 "$MODRINTH_API")
+        --data-urlencode "facets=$FACETS" \
+        --data-urlencode "index=newest" \
+        --data-urlencode "limit=$LIMIT" \
+        "$MODRINTH_API")
+
+echo $RESPONSE
 
 # --- Parse and Filter New Mods ---
 NEW_MODS=$(echo "$RESPONSE" | jq --argjson last "$LAST_TIMESTAMP" '
@@ -34,6 +39,8 @@ NEW_MODS=$(echo "$RESPONSE" | jq --argjson last "$LAST_TIMESTAMP" '
   | map(select(.date_created | sub("\\.\\d+"; "") | fromdateiso8601 > $last))
   | sort_by(.date_created)
 ')
+
+echo lololol
 
 # Exit if no new mods
 if [ "$(echo "$NEW_MODS" | jq length)" -eq 0 ]; then
@@ -51,13 +58,24 @@ echo "$NEW_MODS" | jq -c '.[]' | while read -r mod; do
   TIMESTAMP=$(date --date="$CLEAN_DATE" +%s)
   ICON_URL=$(echo "$mod" | jq -r '.icon_url // ""')
 
-  # Build Embed JSON
+  # --- Build Footer: Minecraft version + first modloader (entirely in jq) ---
+  FOOTER=$(echo "$mod" | jq -r '
+    .versions[0] as $mc_version
+    |
+    (.categories | map(select(test("fabric|forge|quilt|neo|rift|flint|loader|risugami|client|server"; "i"))) | .[0]) as $loader
+    |
+    if $loader then "\($mc_version) • \($loader)" else $mc_version end
+    | if . == null or . == "" then "Various Minecraft Versions" else . end
+  ')
+
+  # --- Build Embed JSON ---
   EMBED=$(jq -n \
     --arg title "$NAME" \
     --arg description "$DESCRIPTION" \
     --arg url "$URL" \
     --arg timestamp "$CLEAN_DATE" \
     --arg icon_url "$ICON_URL" \
+    --arg footer "$FOOTER" \
     '{
       "embeds": [
         {
@@ -66,18 +84,17 @@ echo "$NEW_MODS" | jq -c '.[]' | while read -r mod; do
           "url": $url,
           "timestamp": $timestamp,
           "color": 3066993,
-          "thumbnail": {
-            "url": $icon_url
-          },
-	  "author": {
-		"text": "Modrinth",
-		"icon_url": "https://pt.minecraft.wiki/images/thumb/Socials_Modrinth.png/280px-Socials_Modrinth.png"
-  	  }
+          "thumbnail": { "url": $icon_url },
+          "footer": {
+            "text": $footer,
+            "icon_url": "https://pt.minecraft.wiki/images/thumb/Socials_Modrinth.png/280px-Socials_Modrinth.png"
+          }
         }
       ]
-    }')
+    }'
+  )
 
-  # Send to each webhook URL from the file
+  # --- Send to each webhook URL from the file ---
   while read -r WEBHOOK_URL; do
     if [[ -n "$WEBHOOK_URL" ]]; then
       curl -s -H "Content-Type: application/json" \
@@ -87,5 +104,6 @@ echo "$NEW_MODS" | jq -c '.[]' | while read -r mod; do
     fi
   done < "$WEBHOOK_LIST"
 
+  # Update persistence file
   echo "$TIMESTAMP" > "$PERSISTENCE_FILE"
 done

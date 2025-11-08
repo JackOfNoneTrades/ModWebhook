@@ -15,17 +15,25 @@ fi
 
 LAST_TIMESTAMP=$(cat "$PERSISTENCE_FILE")
 
+#MC_VERSIONS_JSON=$(echo "[$(echo $MC_VERSIONS | sed 's/,/","/g')]")
+MC_VERSIONS_JSON=$(echo "$MC_VERSIONS" | tr -d ' ' | awk -F, '{for(i=1;i<=NF;i++){printf "\"%s\"%s",$i,(i<NF?",":"")}}')
+MC_VERSIONS_JSON="[$MC_VERSIONS_JSON]"
+echo $MC_VERSIONS_JSON
+
 # --- Fetch Mods from CurseForge ---
 RESPONSE=$(curl -s \
   -H "Accept: application/json" \
   -H "x-api-key: $CURSE_TOKEN" \
   -G "$CURSE_API" \
+  --data-urlencode "classId=6" \
   --data-urlencode "gameId=432" \
-  --data-urlencode "gameVersion=1.7.10" \
+  --data-urlencode "gameVersions=$MC_VERSIONS_JSON" \
   --data-urlencode "sortField=11" \
   --data-urlencode "sortOrder=desc" \
   --data-urlencode "pageSize=$LIMIT"
 )
+
+#echo "$RESPONSE"
 
 # --- Parse and Filter New Mods by Creation Date ---
 NEW_MODS=$(echo "$RESPONSE" | jq --argjson last "$LAST_TIMESTAMP" '
@@ -52,6 +60,32 @@ echo "$NEW_MODS" | jq -c '.[]' | while read -r mod; do
   TIMESTAMP=$(date --date="$CLEAN_DATE" +%s)
   ICON_URL=$(echo "$mod" | jq -r '.logo.thumbnailUrl // ""')
 
+  # --- Extract Minecraft version ---
+  MC_VERSION=$(echo "$mod" | jq -r '
+    .latestFiles[0].gameVersions
+    | map(select(
+        test("(?i)fabric|forge|quilt|neoforge|rift|flint|loader|modloader|client|server") | not
+      ))
+    | .[0] // "Various Minecraft Versions"
+  ')
+
+  MODLOADER=$(echo "$mod" | jq -r '
+    .latestFiles[0].gameVersions
+    | map(select(
+        test("(?i)fabric|forge|quilt|neoforge|rift|flint|risugami")
+      ))
+    | .[0] // ""
+  ')
+
+  if [ -n "$MODLOADER" ]; then
+    FOOTER="$MC_VERSION • $MODLOADER"
+  else
+    FOOTER="$MC_VERSION"
+  fi
+
+  # --- Check for MCreator category ---
+  IS_MCREATOR=$(echo "$mod" | jq -r '.categories | map(.name) | index("MCreator")')
+
   # Build Embed JSON
   EMBED=$(jq -n \
     --arg title "$NAME" \
@@ -59,6 +93,8 @@ echo "$NEW_MODS" | jq -c '.[]' | while read -r mod; do
     --arg url "$URL" \
     --arg timestamp "$CLEAN_DATE" \
     --arg icon_url "$ICON_URL" \
+    --arg footer "$FOOTER" \
+    --argjson is_mcreator "$IS_MCREATOR" \
     '{
       "embeds": [
         {
@@ -67,12 +103,15 @@ echo "$NEW_MODS" | jq -c '.[]' | while read -r mod; do
           "url": $url,
           "timestamp": $timestamp,
           "color": 15844367,
-          "thumbnail": {
-            "url": $icon_url
-          }
+          "thumbnail": { "url": $icon_url },
+          "footer": { "text": $footer, "icon_url": "https://cdn2.steamgriddb.com/logo/f50bce275ff05e1eee3b5c3d2a22db9e.png" },
+          "fields": (if $is_mcreator != null then [
+            { "name": "Warning", "value": "⚠️ This mod was made using **MCreator**" }
+          ] else [] end)
         }
       ]
-    }')
+    }'
+  )
 
   # Send to each webhook URL from the file
   while read -r WEBHOOK_URL; do
