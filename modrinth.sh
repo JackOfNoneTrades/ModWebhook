@@ -81,7 +81,7 @@ echo "$NEW_MODS" | jq -c '.[]' | while read -r mod; do
           "thumbnail": { "url": $icon_url },
           "footer": {
             "text": $footer,
-            "icon_url": "https://pt.minecraft.wiki/images/thumb/Socials_Modrinth.png/280px-Socials_Modrinth.png"
+            "icon_url": "https://raw.githubusercontent.com/JackOfNoneTrades/ModWebhook/refs/heads/master/icons/modrinth.png"
           }
         }
       ]

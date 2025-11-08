@@ -100,7 +100,7 @@ echo "$NEW_MODS" | jq -c '.[]' | while read -r mod; do
           "timestamp": $timestamp,
           "color": 15844367,
           "thumbnail": { "url": $icon_url },
-          "footer": { "text": $footer, "icon_url": "https://cdn2.steamgriddb.com/logo/f50bce275ff05e1eee3b5c3d2a22db9e.png" },
+          "footer": { "text": $footer, "icon_url": "https://raw.githubusercontent.com/JackOfNoneTrades/ModWebhook/refs/heads/master/icons/curse.png" },
           "fields": (if $is_mcreator != null then [
             { "name": "Warning", "value": "⚠️ This mod was made using **MCreator**" }
           ] else [] end)
