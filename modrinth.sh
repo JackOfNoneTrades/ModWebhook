@@ -18,11 +18,9 @@ LAST_TIMESTAMP=$(cat "$PERSISTENCE_FILE")
 # Example in .env: MC_VERSION="1.7.10,1.8,1.12.2"
 MC_VERSION_JSON=$(echo "$MC_VERSIONS" | tr -d ' ' | awk -F, '{for(i=1;i<=NF;i++){printf "\"%s\"%s",$i,(i<NF?",":"")}}')
 MC_VERSION_JSON="[$MC_VERSION_JSON]"
-echo $MC_VERSION_JSON
 
 # --- Construct Modrinth API facets dynamically ---
 FACETS=$(jq -n --argjson versions "$MC_VERSION_JSON" '[[$versions[] | "versions:\(.)"], ["project_type:mod"]]' | jq -c .)
-echo $FACETS
 
 RESPONSE=$(curl -s -G \
         -H "User-Agent: Modrinth new mod watcher/69.0" \
@@ -31,16 +29,12 @@ RESPONSE=$(curl -s -G \
         --data-urlencode "limit=$LIMIT" \
         "$MODRINTH_API")
 
-echo $RESPONSE
-
 # --- Parse and Filter New Mods ---
 NEW_MODS=$(echo "$RESPONSE" | jq --argjson last "$LAST_TIMESTAMP" '
   .hits
   | map(select(.date_created | sub("\\.\\d+"; "") | fromdateiso8601 > $last))
   | sort_by(.date_created)
 ')
-
-echo lololol
 
 # Exit if no new mods
 if [ "$(echo "$NEW_MODS" | jq length)" -eq 0 ]; then

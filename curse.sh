@@ -15,10 +15,8 @@ fi
 
 LAST_TIMESTAMP=$(cat "$PERSISTENCE_FILE")
 
-#MC_VERSIONS_JSON=$(echo "[$(echo $MC_VERSIONS | sed 's/,/","/g')]")
 MC_VERSIONS_JSON=$(echo "$MC_VERSIONS" | tr -d ' ' | awk -F, '{for(i=1;i<=NF;i++){printf "\"%s\"%s",$i,(i<NF?",":"")}}')
 MC_VERSIONS_JSON="[$MC_VERSIONS_JSON]"
-echo $MC_VERSIONS_JSON
 
 # --- Fetch Mods from CurseForge ---
 RESPONSE=$(curl -s \
@@ -32,8 +30,6 @@ RESPONSE=$(curl -s \
   --data-urlencode "sortOrder=desc" \
   --data-urlencode "pageSize=$LIMIT"
 )
-
-#echo "$RESPONSE"
 
 # --- Parse and Filter New Mods by Creation Date ---
 NEW_MODS=$(echo "$RESPONSE" | jq --argjson last "$LAST_TIMESTAMP" '
